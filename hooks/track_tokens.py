@@ -6,37 +6,11 @@ Reads token usage from the session transcript and appends it to today's ledger.
 
 import json
 import sys
-import os
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-LEDGER_DIR = Path(os.environ.get("TOKEN_QUOTA_DIR", Path.home() / ".claude-token-quota"))
-LEDGER_DIR.mkdir(parents=True, exist_ok=True)
-RETAIN_DAYS = int(os.environ.get("TOKEN_QUOTA_RETAIN_DAYS", 31))
+from quota_store import QuotaStore
 
-def today_ledger() -> Path:
-    return LEDGER_DIR / f"{date.today().isoformat()}.json"
-
-def load_ledger() -> dict:
-    p = today_ledger()
-    if p.exists():
-        try:
-            return json.loads(p.read_text())
-        except Exception:
-            pass
-    return {"date": date.today().isoformat(), "total_tokens": 0, "sessions": []}
-
-def save_ledger(ledger: dict):
-    today_ledger().write_text(json.dumps(ledger, indent=2))
-
-def cleanup_old_ledgers():
-    cutoff = date.today() - timedelta(days=RETAIN_DAYS)
-    for f in LEDGER_DIR.glob("????-??-??.json"):
-        try:
-            if date.fromisoformat(f.stem) < cutoff:
-                f.unlink()
-        except ValueError:
-            pass
 
 def get_last_usage(transcript_path: str) -> dict | None:
     """Read the transcript JSONL and return usage from the last assistant message."""
@@ -56,6 +30,7 @@ def get_last_usage(transcript_path: str) -> dict | None:
         pass
     return None
 
+
 def main():
     try:
         raw = sys.stdin.read()
@@ -73,28 +48,32 @@ def main():
     if not usage:
         sys.exit(0)
 
-    input_tokens  = usage.get("input_tokens", 0)
+    input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)
-    cache_write   = usage.get("cache_creation_input_tokens", 0)
-    cache_read    = usage.get("cache_read_input_tokens", 0)
+    cache_write = usage.get("cache_creation_input_tokens", 0)
+    cache_read = usage.get("cache_read_input_tokens", 0)
     total = input_tokens + output_tokens + cache_write + cache_read
 
     if total == 0:
         sys.exit(0)
 
-    ledger = load_ledger()
+    store = QuotaStore()
+    ledger = store.load_ledger()
     ledger["total_tokens"] += total
-    ledger["sessions"].append({
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cache_write_tokens": cache_write,
-        "cache_read_tokens": cache_read,
-    })
-    save_ledger(ledger)
+    ledger["sessions"].append(
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_write_tokens": cache_write,
+            "cache_read_tokens": cache_read,
+        }
+    )
+    store.save_ledger(ledger)
 
     print(f"[token-quota] +{total:,} tokens this turn | today total: {ledger['total_tokens']:,}", file=sys.stderr)
-    cleanup_old_ledgers()
+    store.cleanup_old_ledgers()
+
 
 if __name__ == "__main__":
     main()
