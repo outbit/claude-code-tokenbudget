@@ -17,6 +17,7 @@ HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 ENFORCE  = HOOKS_DIR / "enforce_quota.py"
 TRACK    = HOOKS_DIR / "track_tokens.py"
 STATUS   = HOOKS_DIR / "quota_status.py"
+SNOOZE   = HOOKS_DIR / "snooze.py"
 
 
 def run_script(script: Path, stdin: str = "", env_overrides: dict = None) -> subprocess.CompletedProcess:
@@ -364,6 +365,70 @@ class TestEnforceQuotaMonthly(unittest.TestCase):
         result = run_script(ENFORCE, stdin="{}", env_overrides=env)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
+
+
+def make_snooze(ledger_dir: Path, extra_tokens: int, days_ago: int = 0) -> Path:
+    snooze_date = date.today() - timedelta(days=days_ago)
+    snooze_file = ledger_dir / "snooze.json"
+    snooze_file.write_text(json.dumps({
+        "extra_tokens": extra_tokens,
+        "expires": snooze_date.isoformat(),
+    }))
+    return snooze_file
+
+
+class TestSnooze(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ledger_dir = Path(self.tmp.name)
+        self.env = {
+            "TOKEN_QUOTA_DIR": self.tmp.name,
+            "TOKEN_QUOTA_DAILY": "1000000",
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_snooze_creates_file(self):
+        run_script(SNOOZE, env_overrides=self.env)
+        snooze_file = self.ledger_dir / "snooze.json"
+        self.assertTrue(snooze_file.exists())
+        data = json.loads(snooze_file.read_text())
+        self.assertEqual(data["extra_tokens"], 1_000_000)
+        self.assertEqual(data["expires"], date.today().isoformat())
+
+    def test_snooze_respects_custom_amount(self):
+        env = {**self.env, "TOKEN_QUOTA_SNOOZE_TOKENS": "500000"}
+        run_script(SNOOZE, env_overrides=env)
+        data = json.loads((self.ledger_dir / "snooze.json").read_text())
+        self.assertEqual(data["extra_tokens"], 500_000)
+
+    def test_snooze_allows_previously_blocked_prompt(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000)  # at daily limit
+        make_snooze(self.ledger_dir, extra_tokens=1_000_000)  # snooze adds 1M more
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_expired_snooze_is_ignored(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000)
+        make_snooze(self.ledger_dir, extra_tokens=1_000_000, days_ago=1)  # yesterday
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+
+    def test_snooze_shown_in_status(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        make_snooze(self.ledger_dir, extra_tokens=1_000_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertIn("Snooze", result.stdout)
+        self.assertIn("1,000,000", result.stdout)
+
+    def test_no_snooze_line_without_active_snooze(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertNotIn("Snooze", result.stdout)
 
 
 class TestQuotaStatus(unittest.TestCase):
