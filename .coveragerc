@@ -1,8 +1,0 @@
-[run]
-source = hooks
-branch = True
-
-[report]
-show_missing = True
-omit =
-    tests/*

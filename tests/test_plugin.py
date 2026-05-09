@@ -103,6 +103,28 @@ class TestEnforceQuota(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "")
         self.assertIn("token-quota", result.stderr)
 
+    def test_warns_at_custom_critical_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "80", "TOKEN_QUOTA_WARN": "70"}
+        make_ledger(self.ledger_dir, total_tokens=810_000)  # 81% — above custom critical
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "allow")
+        self.assertIn("Nearly exhausted", output["reason"])
+
+    def test_warns_to_stderr_at_custom_warn_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "90", "TOKEN_QUOTA_WARN": "70"}
+        make_ledger(self.ledger_dir, total_tokens=750_000)  # 75% — above custom warn, below critical
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertIn("token-quota", result.stderr)
+
+    def test_no_warning_below_warn_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "95", "TOKEN_QUOTA_WARN": "85"}
+        make_ledger(self.ledger_dir, total_tokens=800_000)  # 80% — below both thresholds
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertEqual(result.stderr.strip(), "")
+
     def test_respects_custom_limit(self):
         make_ledger(self.ledger_dir, total_tokens=500_000)
         env = {**self.env, "TOKEN_QUOTA_DAILY": "500000"}
@@ -234,6 +256,116 @@ class TestTrackTokens(unittest.TestCase):
         self.assertIn("150", result.stderr)
 
 
+class TestEnforceQuotaWeekly(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ledger_dir = Path(self.tmp.name)
+        # High daily limit so it never fires first
+        self.env = {
+            "TOKEN_QUOTA_DIR": self.tmp.name,
+            "TOKEN_QUOTA_DAILY": "10000000",
+            "TOKEN_QUOTA_WEEKLY": "3000000",
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_allows_when_no_weekly_ledgers(self):
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_allows_when_under_weekly_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=500_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_blocks_when_weekly_limit_exceeded(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=2)
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=1_100_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("Weekly", output["reason"])
+
+    def test_blocks_at_exact_weekly_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=1_500_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=1_500_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+
+    def test_ignores_days_outside_rolling_window(self):
+        # 10 days ago is outside the 7-day window and should not count
+        make_ledger(self.ledger_dir, total_tokens=3_000_000, days_ago=10)
+        make_ledger(self.ledger_dir, total_tokens=500_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_no_weekly_limit_by_default(self):
+        env = {"TOKEN_QUOTA_DIR": self.tmp.name, "TOKEN_QUOTA_DAILY": "10000000"}
+        make_ledger(self.ledger_dir, total_tokens=5_000_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+
+class TestEnforceQuotaMonthly(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ledger_dir = Path(self.tmp.name)
+        # High daily and weekly limits so they never fire first
+        self.env = {
+            "TOKEN_QUOTA_DIR": self.tmp.name,
+            "TOKEN_QUOTA_DAILY": "10000000",
+            "TOKEN_QUOTA_WEEKLY": "100000000",
+            "TOKEN_QUOTA_MONTHLY": "5000000",
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_allows_when_no_monthly_ledgers(self):
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_allows_when_under_monthly_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=2_000_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_blocks_when_monthly_limit_exceeded(self):
+        # Use days_ago=0 and 1 to stay safely within the current calendar month.
+        # This assumption holds when run on the 2nd or later of any month.
+        make_ledger(self.ledger_dir, total_tokens=3_000_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=2_500_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("Monthly", output["reason"])
+
+    def test_blocks_at_exact_monthly_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=5_000_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=self.env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+
+    def test_no_monthly_limit_by_default(self):
+        env = {"TOKEN_QUOTA_DIR": self.tmp.name, "TOKEN_QUOTA_DAILY": "20000000"}
+        make_ledger(self.ledger_dir, total_tokens=10_000_000, days_ago=0)
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
+
 class TestQuotaStatus(unittest.TestCase):
 
     def setUp(self):
@@ -280,6 +412,86 @@ class TestQuotaStatus(unittest.TestCase):
         ])
         result = run_script(STATUS, env_overrides=self.env)
         self.assertIn("3", result.stdout)
+
+    def test_no_weekly_section_without_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertNotIn("Weekly", result.stdout)
+
+    def test_no_monthly_section_without_limit(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertNotIn("Monthly", result.stdout)
+
+    def test_shows_weekly_section_when_limit_set(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=500_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_WEEKLY": "5000000"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("Weekly", result.stdout)
+        self.assertIn("1,500,000", result.stdout)
+        self.assertIn("3,500,000", result.stdout)  # remaining
+
+    def test_shows_monthly_section_when_limit_set(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "10000000"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("Monthly", result.stdout)
+        self.assertIn("9,500,000", result.stdout)  # remaining
+
+    def test_weekly_shows_exceeded_status(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=1)
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_WEEKLY": "1500000"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("EXCEEDED", result.stdout)
+
+    def test_monthly_shows_exceeded_status(self):
+        make_ledger(self.ledger_dir, total_tokens=5_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "3000000"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("EXCEEDED", result.stdout)
+
+    def test_warns_when_retain_days_below_31_with_monthly_quota(self):
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "10000000", "TOKEN_QUOTA_RETAIN_DAYS": "28"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("WARNING", result.stdout)
+        self.assertIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_retain_days_warning_without_monthly_quota(self):
+        env = {**self.env, "TOKEN_QUOTA_RETAIN_DAYS": "7"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertNotIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_retain_days_warning_when_retain_days_is_31(self):
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "10000000", "TOKEN_QUOTA_RETAIN_DAYS": "31"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertNotIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_cost_shown_without_cost_per_m(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertNotIn("~$", result.stdout)
+
+    def test_shows_cost_in_daily_section(self):
+        # 1,000,000 tokens at $5.40/M = $5.40
+        make_ledger(self.ledger_dir, total_tokens=1_000_000)
+        env = {**self.env, "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("~$5.40", result.stdout)
+
+    def test_shows_cost_in_weekly_section(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_WEEKLY": "5000000", "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        # Weekly section should contain cost for used tokens and limit
+        self.assertIn("~$5.40", result.stdout)
+
+    def test_shows_cost_in_monthly_section(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "5000000", "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("~$5.40", result.stdout)
 
 
 if __name__ == "__main__":

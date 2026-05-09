@@ -12,7 +12,7 @@ from pathlib import Path
 
 LEDGER_DIR = Path(os.environ.get("TOKEN_QUOTA_DIR", Path.home() / ".claude-token-quota"))
 LEDGER_DIR.mkdir(parents=True, exist_ok=True)
-RETAIN_DAYS = int(os.environ.get("TOKEN_QUOTA_RETAIN_DAYS", 30))
+RETAIN_DAYS = int(os.environ.get("TOKEN_QUOTA_RETAIN_DAYS", 31))
 
 def today_ledger() -> Path:
     return LEDGER_DIR / f"{date.today().isoformat()}.json"
