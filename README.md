@@ -1,17 +1,17 @@
 [![Tests](https://github.com/thedavidwhiteside/claude-code-tokenbudget/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/thedavidwhiteside/claude-code-tokenbudget/actions/workflows/test.yml)
 
-# Claude Code Daily Token Quota Plugin
+# Claude Code Token Quota Plugin
 
-Claude Code has no built-in spending guardrails. This plugin tracks your daily token usage and hard stops new prompts once you hit your limit. It works with **any backend**: Bedrock, Vertex, direct API, or subscription.
+Claude Code has no built-in spending guardrails. This plugin tracks your token usage and hard stops new prompts once you hit your limit. Supports daily, weekly (rolling 7-day), and monthly (calendar month) quotas. It works with **any backend**: Bedrock, Vertex, direct API, or subscription.
 
 ## How it works
 
 | Hook | Event | Action |
 |------|-------|--------|
-| `enforce_quota.py` | `UserPromptSubmit` | Blocks the prompt if today's usage ≥ limit |
+| `enforce_quota.py` | `UserPromptSubmit` | Blocks the prompt if any quota (daily/weekly/monthly) is exceeded |
 | `track_tokens.py` | `Stop` | Records token usage after each turn |
 
-Usage is stored in `~/.claude-token-quota/YYYY-MM-DD.json` and resets automatically each day.
+Usage is stored in `~/.claude-token-quota/YYYY-MM-DD.json` per day. Daily quotas reset at midnight; the weekly quota uses a rolling 7-day window; the monthly quota resets on the 1st.
 
 ---
 
@@ -50,6 +50,8 @@ Override any of these in your `~/.claude/settings.json`:
 {
   "env": {
     "TOKEN_QUOTA_DAILY": "1000000",
+    "TOKEN_QUOTA_WEEKLY": "5000000",
+    "TOKEN_QUOTA_MONTHLY": "15000000",
     "TOKEN_QUOTA_DIR": "~/.claude-token-quota",
     "TOKEN_QUOTA_RETAIN_DAYS": "30"
   }
@@ -59,8 +61,12 @@ Override any of these in your `~/.claude/settings.json`:
 | Variable | Default | Description |
 |---|---|---|
 | `TOKEN_QUOTA_DAILY` | `1000000` | Daily token limit |
+| `TOKEN_QUOTA_WEEKLY` | _(unset)_ | Rolling 7-day token limit (optional) |
+| `TOKEN_QUOTA_MONTHLY` | _(unset)_ | Calendar-month token limit (optional) |
 | `TOKEN_QUOTA_DIR` | `~/.claude-token-quota` | Where ledger files are stored |
 | `TOKEN_QUOTA_RETAIN_DAYS` | `30` | How many days of usage history to keep |
+
+Weekly and monthly limits are opt-in — omit them to enforce only the daily limit. When multiple limits are set, any one being exceeded blocks new prompts.
 
 **Rough token budgets by spend goal — AWS Bedrock example (Claude Sonnet 4.6):**
 
