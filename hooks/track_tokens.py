@@ -9,7 +9,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
 from quota_store import QuotaStore
 
 
@@ -49,10 +48,10 @@ def main():
     if not usage:
         sys.exit(0)
 
-    input_tokens  = usage.get("input_tokens", 0)
+    input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)
-    cache_write   = usage.get("cache_creation_input_tokens", 0)
-    cache_read    = usage.get("cache_read_input_tokens", 0)
+    cache_write = usage.get("cache_creation_input_tokens", 0)
+    cache_read = usage.get("cache_read_input_tokens", 0)
     total = input_tokens + output_tokens + cache_write + cache_read
 
     if total == 0:
@@ -61,13 +60,15 @@ def main():
     store = QuotaStore()
     ledger = store.load_ledger()
     ledger["total_tokens"] += total
-    ledger["sessions"].append({
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cache_write_tokens": cache_write,
-        "cache_read_tokens": cache_read,
-    })
+    ledger["sessions"].append(
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_write_tokens": cache_write,
+            "cache_read_tokens": cache_read,
+        }
+    )
     store.save_ledger(ledger)
 
     print(f"[token-quota] +{total:,} tokens this turn | today total: {ledger['total_tokens']:,}", file=sys.stderr)

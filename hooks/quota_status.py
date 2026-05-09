@@ -11,10 +11,7 @@ estimated spend alongside token counts (e.g. TOKEN_QUOTA_COST_PER_M=5.40).
 import json
 import os
 from datetime import date, timedelta
-from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).parent))
 from quota_store import QuotaStore
 
 _cost_raw = os.environ.get("TOKEN_QUOTA_COST_PER_M")
@@ -41,12 +38,12 @@ def main():
 
     if store.monthly_limit is not None and store.retain_days < 31:
         print(f"  ⚠️  WARNING: TOKEN_QUOTA_RETAIN_DAYS={store.retain_days} is below 31.")
-        print(f"  Monthly totals may be incomplete for 31-day months.")
-        print(f"  Set TOKEN_QUOTA_RETAIN_DAYS=31 or higher to fix this.")
+        print("  Monthly totals may be incomplete for 31-day months.")
+        print("  Set TOKEN_QUOTA_RETAIN_DAYS=31 or higher to fix this.")
 
-    print(f"\n{'─'*50}")
+    print(f"\n{'─' * 50}")
     print(f"  Claude Code Token Quota — {today.isoformat()}")
-    print(f"{'─'*50}")
+    print(f"{'─' * 50}")
 
     snooze = store.get_snooze()
 
@@ -106,7 +103,7 @@ def main():
             print(f"  Snooze:    {snooze:>12,} tokens  (expires midnight)")
         print(f"  Status:    {status}")
 
-    print(f"\n{'─'*50}\n")
+    print(f"\n{'─' * 50}\n")
 
 
 if __name__ == "__main__":

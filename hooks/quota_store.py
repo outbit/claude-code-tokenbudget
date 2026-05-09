@@ -2,11 +2,6 @@
 quota_store.py — shared data access layer for all token-quota hooks.
 
 Encapsulates config parsing, ledger reads/writes, snooze state, and cleanup.
-Import via:
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent))
-    from quota_store import QuotaStore
 """
 
 import json
@@ -99,7 +94,12 @@ class QuotaStore:
     def write_snooze(self, extra_tokens: int):
         self.ledger_dir.mkdir(parents=True, exist_ok=True)
         snooze_file = self.ledger_dir / "snooze.json"
-        snooze_file.write_text(json.dumps({
-            "extra_tokens": extra_tokens,
-            "expires": date.today().isoformat(),
-        }, indent=2))
+        snooze_file.write_text(
+            json.dumps(
+                {
+                    "extra_tokens": extra_tokens,
+                    "expires": date.today().isoformat(),
+                },
+                indent=2,
+            )
+        )

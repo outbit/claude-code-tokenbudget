@@ -15,12 +15,10 @@ Set limits via environment variables:
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import date, timedelta
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
 from quota_store import QuotaStore
 
 WARN_CRITICAL = int(os.environ.get("TOKEN_QUOTA_WARN_CRITICAL", 95))
@@ -42,14 +40,7 @@ def main():
     pct_daily = (used_daily / effective_daily) * 100 if effective_daily > 0 else 0
 
     if used_daily >= effective_daily:
-        result = {
-            "decision": "block",
-            "reason": (
-                f"Daily token quota exceeded.\n"
-                f"Used:  {used_daily:,} / {effective_daily:,} tokens ({pct_daily:.1f}%)\n"
-                f"Quota resets at midnight. Edit TOKEN_QUOTA_DAILY to change the limit."
-            )
-        }
+        result = {"decision": "block", "reason": (f"Daily token quota exceeded.\nUsed:  {used_daily:,} / {effective_daily:,} tokens ({pct_daily:.1f}%)\nQuota resets at midnight. Edit TOKEN_QUOTA_DAILY to change the limit.")}
         print(json.dumps(result))
         sys.exit(0)
 
@@ -59,14 +50,7 @@ def main():
         effective_weekly = store.weekly_limit + snooze
         if used_weekly >= effective_weekly:
             pct = (used_weekly / effective_weekly) * 100
-            result = {
-                "decision": "block",
-                "reason": (
-                    f"Weekly token quota exceeded (rolling 7-day window).\n"
-                    f"Used:  {used_weekly:,} / {effective_weekly:,} tokens ({pct:.1f}%)\n"
-                    f"Edit TOKEN_QUOTA_WEEKLY to change the limit."
-                )
-            }
+            result = {"decision": "block", "reason": (f"Weekly token quota exceeded (rolling 7-day window).\nUsed:  {used_weekly:,} / {effective_weekly:,} tokens ({pct:.1f}%)\nEdit TOKEN_QUOTA_WEEKLY to change the limit.")}
             print(json.dumps(result))
             sys.exit(0)
 
@@ -76,14 +60,7 @@ def main():
         effective_monthly = store.monthly_limit + snooze
         if used_monthly >= effective_monthly:
             pct = (used_monthly / effective_monthly) * 100
-            result = {
-                "decision": "block",
-                "reason": (
-                    f"Monthly token quota exceeded.\n"
-                    f"Used:  {used_monthly:,} / {effective_monthly:,} tokens ({pct:.1f}%)\n"
-                    f"Quota resets on the 1st. Edit TOKEN_QUOTA_MONTHLY to change the limit."
-                )
-            }
+            result = {"decision": "block", "reason": (f"Monthly token quota exceeded.\nUsed:  {used_monthly:,} / {effective_monthly:,} tokens ({pct:.1f}%)\nQuota resets on the 1st. Edit TOKEN_QUOTA_MONTHLY to change the limit.")}
             print(json.dumps(result))
             sys.exit(0)
 
