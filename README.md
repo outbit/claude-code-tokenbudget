@@ -53,7 +53,9 @@ Override any of these in your `~/.claude/settings.json`:
     "TOKEN_QUOTA_WEEKLY": "5000000",
     "TOKEN_QUOTA_MONTHLY": "15000000",
     "TOKEN_QUOTA_DIR": "~/.claude-token-quota",
-    "TOKEN_QUOTA_RETAIN_DAYS": "30"
+    "TOKEN_QUOTA_RETAIN_DAYS": "30",
+    "TOKEN_QUOTA_WARN_CRITICAL": "95",
+    "TOKEN_QUOTA_WARN": "85"
   }
 }
 ```
@@ -65,6 +67,8 @@ Override any of these in your `~/.claude/settings.json`:
 | `TOKEN_QUOTA_MONTHLY` | _(unset)_ | Calendar-month token limit (optional) |
 | `TOKEN_QUOTA_DIR` | `~/.claude-token-quota` | Where ledger files are stored |
 | `TOKEN_QUOTA_RETAIN_DAYS` | `30` | How many days of usage history to keep |
+| `TOKEN_QUOTA_WARN_CRITICAL` | `95` | % of daily limit at which a visible warning is shown |
+| `TOKEN_QUOTA_WARN` | `85` | % of daily limit at which a stderr warning is shown |
 
 Weekly and monthly limits are opt-in — omit them to enforce only the daily limit. When multiple limits are set, any one being exceeded blocks new prompts.
 

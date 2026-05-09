@@ -8,6 +8,8 @@ Set limits via environment variables:
   TOKEN_QUOTA_WEEKLY=5000000   (optional; rolling 7-day window)
   TOKEN_QUOTA_MONTHLY=15000000 (optional; current calendar month)
   TOKEN_QUOTA_DIR=~/.claude-token-quota  (default ledger location)
+  TOKEN_QUOTA_WARN_CRITICAL=95 (default: warn loudly at 95% of daily limit)
+  TOKEN_QUOTA_WARN=85          (default: warn quietly at 85% of daily limit)
 """
 
 import json
@@ -18,6 +20,8 @@ from pathlib import Path
 
 LEDGER_DIR = Path(os.environ.get("TOKEN_QUOTA_DIR", Path.home() / ".claude-token-quota"))
 DAILY_LIMIT = int(os.environ.get("TOKEN_QUOTA_DAILY", 1_000_000))
+WARN_CRITICAL = int(os.environ.get("TOKEN_QUOTA_WARN_CRITICAL", 95))
+WARN = int(os.environ.get("TOKEN_QUOTA_WARN", 85))
 
 _weekly_raw = os.environ.get("TOKEN_QUOTA_WEEKLY")
 WEEKLY_LIMIT = int(_weekly_raw) if _weekly_raw else None
@@ -107,11 +111,11 @@ def main():
             sys.exit(0)
 
     remaining = DAILY_LIMIT - used_daily
-    if pct_daily >= 95:
+    if pct_daily >= WARN_CRITICAL:
         warning = f"Token quota at {pct_daily:.1f}% ({used_daily:,} / {DAILY_LIMIT:,}). Nearly exhausted."
         result = {"decision": "allow", "reason": warning}
         print(json.dumps(result))
-    elif pct_daily >= 85:
+    elif pct_daily >= WARN:
         print(f"[token-quota] {pct_daily:.1f}% of daily quota used ({remaining:,} tokens remaining)", file=sys.stderr)
 
     sys.exit(0)

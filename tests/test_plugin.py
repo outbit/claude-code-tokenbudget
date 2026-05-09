@@ -103,6 +103,28 @@ class TestEnforceQuota(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "")
         self.assertIn("token-quota", result.stderr)
 
+    def test_warns_at_custom_critical_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "80", "TOKEN_QUOTA_WARN": "70"}
+        make_ledger(self.ledger_dir, total_tokens=810_000)  # 81% — above custom critical
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "allow")
+        self.assertIn("Nearly exhausted", output["reason"])
+
+    def test_warns_to_stderr_at_custom_warn_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "90", "TOKEN_QUOTA_WARN": "70"}
+        make_ledger(self.ledger_dir, total_tokens=750_000)  # 75% — above custom warn, below critical
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertIn("token-quota", result.stderr)
+
+    def test_no_warning_below_warn_threshold(self):
+        env = {**self.env, "TOKEN_QUOTA_WARN_CRITICAL": "95", "TOKEN_QUOTA_WARN": "85"}
+        make_ledger(self.ledger_dir, total_tokens=800_000)  # 80% — below both thresholds
+        result = run_script(ENFORCE, stdin="{}", env_overrides=env)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertEqual(result.stderr.strip(), "")
+
     def test_respects_custom_limit(self):
         make_ledger(self.ledger_dir, total_tokens=500_000)
         env = {**self.env, "TOKEN_QUOTA_DAILY": "500000"}
