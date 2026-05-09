@@ -452,6 +452,47 @@ class TestQuotaStatus(unittest.TestCase):
         result = run_script(STATUS, env_overrides=env)
         self.assertIn("EXCEEDED", result.stdout)
 
+    def test_warns_when_retain_days_below_31_with_monthly_quota(self):
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "10000000", "TOKEN_QUOTA_RETAIN_DAYS": "28"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("WARNING", result.stdout)
+        self.assertIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_retain_days_warning_without_monthly_quota(self):
+        env = {**self.env, "TOKEN_QUOTA_RETAIN_DAYS": "7"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertNotIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_retain_days_warning_when_retain_days_is_31(self):
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "10000000", "TOKEN_QUOTA_RETAIN_DAYS": "31"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertNotIn("RETAIN_DAYS", result.stdout)
+
+    def test_no_cost_shown_without_cost_per_m(self):
+        make_ledger(self.ledger_dir, total_tokens=500_000)
+        result = run_script(STATUS, env_overrides=self.env)
+        self.assertNotIn("~$", result.stdout)
+
+    def test_shows_cost_in_daily_section(self):
+        # 1,000,000 tokens at $5.40/M = $5.40
+        make_ledger(self.ledger_dir, total_tokens=1_000_000)
+        env = {**self.env, "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("~$5.40", result.stdout)
+
+    def test_shows_cost_in_weekly_section(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_WEEKLY": "5000000", "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        # Weekly section should contain cost for used tokens and limit
+        self.assertIn("~$5.40", result.stdout)
+
+    def test_shows_cost_in_monthly_section(self):
+        make_ledger(self.ledger_dir, total_tokens=1_000_000, days_ago=0)
+        env = {**self.env, "TOKEN_QUOTA_MONTHLY": "5000000", "TOKEN_QUOTA_COST_PER_M": "5.40"}
+        result = run_script(STATUS, env_overrides=env)
+        self.assertIn("~$5.40", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
